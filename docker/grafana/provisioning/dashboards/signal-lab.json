@@ -1,0 +1,66 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Runs by Scenario",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(signal_lab_scenarios_total) by (scenario)",
+          "legendFormat": "{{scenario}}"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["last"], "fields": "" } }
+    },
+    {
+      "type": "stat",
+      "title": "Errors by Scenario",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(signal_lab_errors_total) by (scenario)",
+          "legendFormat": "{{scenario}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Duration ms",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "signal_lab_duration_ms"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Recent API Logs",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "{job='api'}"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "title": "Signal Lab",
+  "version": 1
+}

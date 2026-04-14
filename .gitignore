@@ -1,0 +1,15 @@
+node_modules
+.pnpm-store
+.next
+dist
+.env
+.env.*
+Dockerfile*
+.vscode
+.idea
+coverage
+.tmp
+pnpm-lock.yaml
+.cache
+logs
+*.log
