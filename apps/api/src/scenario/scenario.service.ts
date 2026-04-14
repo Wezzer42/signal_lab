@@ -1,7 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma, ScenarioRun } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RunScenarioDto, ScenarioType } from './dto/run-scenario.dto';
+import { MetricsService } from '../metrics/metrics.service';
+import pino from 'pino';
+import * as Sentry from '@sentry/node';
 
 const SCENARIO_MESSAGES: Record<ScenarioType, string> = {
   [ScenarioType.HEALTHY]: 'Healthy request completed successfully',
@@ -11,9 +14,15 @@ const SCENARIO_MESSAGES: Record<ScenarioType, string> = {
 
 @Injectable()
 export class ScenarioService {
-  private readonly logger = new Logger(ScenarioService.name);
+  private readonly logger = pino({
+    name: ScenarioService.name,
+    level: process.env.LOG_LEVEL ?? 'info'
+  });
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly metrics: MetricsService
+  ) {}
 
   async runScenario({ scenario }: RunScenarioDto): Promise<ScenarioRun> {
     const startedAt = Date.now();
@@ -35,13 +44,24 @@ export class ScenarioService {
           throw new Error(`Unsupported scenario: ${scenario}`);
       }
       run = await this.persistRun(scenario, status, startedAt, message);
-      this.logger.log(this.formatLogMessage('success', scenario, run));
+      this.metrics.recordScenario({
+        scenario,
+        status,
+        durationMs: run.durationMs ?? 0
+      });
+      this.logger.info(this.formatLogPayload('success', scenario, run));
       return run;
     } catch (error) {
       status = 'error';
       message = error instanceof Error ? error.message : 'Scenario failed';
       run = await this.persistRun(scenario, status, startedAt, message);
-      this.logger.error(this.formatLogMessage('error', scenario, run), error instanceof Error ? error.stack : undefined);
+      this.metrics.recordScenario({
+        scenario,
+        status,
+        durationMs: run.durationMs ?? 0
+      });
+      this.logger.error(this.formatLogPayload('error', scenario, run, error));
+      this.reportScenarioError(run, error);
       return run;
     }
   }
@@ -75,11 +95,37 @@ export class ScenarioService {
     return new Promise((resolve) => setTimeout(resolve, delay));
   }
 
-  private formatLogMessage(
+  private formatLogPayload(
     level: 'success' | 'error',
     scenario: ScenarioType,
-    run: ScenarioRun
-  ): string {
-    return `[scenario:${scenario}] status=${level} durationMs=${run.durationMs ?? 0} runId=${run.id} message="${run.message ?? ''}"`;
+    run: ScenarioRun,
+    error?: unknown
+  ) {
+    return {
+      scenario,
+      status: level,
+      durationMs: run.durationMs ?? 0,
+      runId: run.id,
+      message: run.message ?? '',
+      error: error instanceof Error ? error.message : undefined
+    };
+  }
+
+  private reportScenarioError(run: ScenarioRun, error: unknown) {
+    const sentryClient = Sentry.getCurrentHub().getClient();
+    if (!sentryClient) {
+      return;
+    }
+    Sentry.captureException(error, {
+      tags: {
+        scenario: run.scenario,
+        status: run.status
+      },
+      extra: {
+        runId: run.id,
+        durationMs: run.durationMs,
+        message: run.message
+      }
+    });
   }
 }
