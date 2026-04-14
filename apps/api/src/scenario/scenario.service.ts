@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RunScenarioDto, ScenarioType } from './dto/run-scenario.dto';
 import { MetricsService } from '../metrics/metrics.service';
 import pino from 'pino';
+import { randomUUID } from 'crypto';
 import * as Sentry from '@sentry/node';
 
 const SCENARIO_MESSAGES: Record<ScenarioType, string> = {
@@ -26,6 +27,7 @@ export class ScenarioService {
 
   async runScenario({ scenario }: RunScenarioDto): Promise<ScenarioRun> {
     const startedAt = Date.now();
+    const requestId = randomUUID();
     let status: Prisma.ScenarioRunCreateInput['status'] = 'success';
     let message = SCENARIO_MESSAGES[scenario];
     let run: ScenarioRun;
@@ -49,7 +51,7 @@ export class ScenarioService {
         status,
         durationMs: run.durationMs ?? 0
       });
-      this.logger.info(this.formatLogPayload('success', scenario, run));
+      this.logger.info(this.formatLogPayload('success', scenario, run, requestId));
       return run;
     } catch (error) {
       status = 'error';
@@ -60,8 +62,8 @@ export class ScenarioService {
         status,
         durationMs: run.durationMs ?? 0
       });
-      this.logger.error(this.formatLogPayload('error', scenario, run, error));
-      this.reportScenarioError(run, error);
+      this.logger.error(this.formatLogPayload('error', scenario, run, requestId, error));
+      this.reportScenarioError(run, error, requestId);
       return run;
     }
   }
@@ -99,6 +101,7 @@ export class ScenarioService {
     level: 'success' | 'error',
     scenario: ScenarioType,
     run: ScenarioRun,
+    requestId: string,
     error?: unknown
   ) {
     return {
@@ -107,11 +110,12 @@ export class ScenarioService {
       durationMs: run.durationMs ?? 0,
       runId: run.id,
       message: run.message ?? '',
+      requestId,
       error: error instanceof Error ? error.message : undefined
     };
   }
 
-  private reportScenarioError(run: ScenarioRun, error: unknown) {
+  private reportScenarioError(run: ScenarioRun, error: unknown, requestId: string) {
     const sentryClient = Sentry.getCurrentHub().getClient();
     if (!sentryClient) {
       return;
@@ -124,7 +128,8 @@ export class ScenarioService {
       extra: {
         runId: run.id,
         durationMs: run.durationMs,
-        message: run.message
+        message: run.message,
+        requestId
       }
     });
   }
